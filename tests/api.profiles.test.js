@@ -147,6 +147,55 @@ describe('Profiles API', function ( ) {
       });
   });
 
+  it('post an array of profiles to the /profiles/ alias, verify stored, delete', function (done) {
+    // nightscout-connect forks post batches to /api/v1/profiles.json; the
+    // alias must behave exactly like POST /profile/
+    var profiles = ['2031-01-01T00:00:00.000Z', '2031-01-02T00:00:00.000Z'].map(function (startDate) {
+      return { defaultProfile: 'AliasTest', store: { AliasTest: { dia: 3 } }, startDate: startDate };
+    });
+
+    function removeAll (ids, next) {
+      if (ids.length === 0) return next();
+      request(self.app)
+        .delete('/api/profile/' + ids[0])
+        .set('api-secret', known || '')
+        .expect(200)
+        .end(function (err) {
+          if (err) return next(err);
+          removeAll(ids.slice(1), next);
+        });
+    }
+
+    request(self.app)
+      .post('/api/profiles/')
+      .set('api-secret', known || '')
+      .send(profiles)
+      .expect(200)
+      .expect(function (response) {
+        response.body.length.should.equal(2);
+        response.body.forEach(function (profile) {
+          profile.should.have.property('_id');
+          profile.should.have.property('created_at');
+        });
+      })
+      .end(function (err, res) {
+        if (err) return done(err);
+        var ids = res.body.map(function (profile) { return profile._id; });
+        request(self.app)
+          .get('/api/profiles/')
+          .query({ 'find[defaultProfile]': 'AliasTest' })
+          .set('api-secret', known || '')
+          .expect(200)
+          .expect(function (response) {
+            response.body.length.should.equal(2);
+          })
+          .end(function (err) {
+            if (err) return done(err);
+            removeAll(ids, done);
+          });
+      });
+  });
+
   // _id validation tests (prevent 500 errors from invalid ObjectId)
   describe('_id validation', function() {
 
